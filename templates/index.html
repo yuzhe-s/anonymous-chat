@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>匿名聊天室</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+</head>
+<body>
+    <div id="app">
+        <!-- 初始状态：匹配前 -->
+        <div id="start-screen" class="screen active">
+            <div class="container">
+                <h1>🎭 匿名聊天室</h1>
+                <p class="subtitle">随机匹配陌生人，开始一段匿名对话</p>
+                <button id="start-match-btn" class="btn btn-primary">开始匹配</button>
+                <p class="user-id">你的ID: <span id="current-user-id">{{ user_id }}</span></p>
+            </div>
+        </div>
+
+        <!-- 等待匹配状态 -->
+        <div id="waiting-screen" class="screen">
+            <div class="container">
+                <div class="spinner"></div>
+                <p class="waiting-text">正在寻找聊天对象...</p>
+                <p class="waiting-count" id="waiting-count"></p>
+                <button id="cancel-match-btn" class="btn btn-secondary">取消匹配</button>
+            </div>
+        </div>
+
+        <!-- 聊天状态 -->
+        <div id="chat-screen" class="screen">
+            <div class="chat-container">
+                <div class="chat-header">
+                    <span class="partner-info">💬 与陌生人聊天中</span>
+                    <button id="leave-btn" class="btn btn-danger">离开聊天</button>
+                </div>
+
+                <div id="messages" class="messages-container">
+                    <!-- 消息将在这里动态添加 -->
+                </div>
+
+                <div class="input-area">
+                    <input
+                        type="text"
+                        id="message-input"
+                        placeholder="输入消息..."
+                        maxlength="500"
+                        autocomplete="off">
+                    <button id="send-btn" class="btn btn-send">发送</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // 将用户ID传递给JavaScript
+        window.currentUserId = "{{ user_id }}";
+    </script>
+    <script src="{{ url_for('static', filename='js/chat.js') }}"></script>
+</body>
+</html>
