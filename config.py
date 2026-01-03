@@ -1,4 +1,5 @@
 import os
+from sqlalchemy.pool import NullPool
 
 class Config:
     """Flask应用配置"""
@@ -15,9 +16,9 @@ class Config:
     SQLALCHEMY_DATABASE_URI = database_url
     SQLALCHEMY_TRACK_MODIFICATIONS = False
 
-    # 禁用连接池，兼容 eventlet
+    # 使用 NullPool 禁用连接池，完全兼容 eventlet
     SQLALCHEMY_ENGINE_OPTIONS = {
-        'poolclass': None,
+        'poolclass': NullPool,
         'pool_pre_ping': True
     }
 
