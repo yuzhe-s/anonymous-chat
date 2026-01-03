@@ -1,11 +1,14 @@
 from flask import Flask, render_template, session, request, jsonify
 from flask_socketio import SocketIO, emit, join_room, leave_room
 from flask_session import Session
-from models import db, ChatRoom, Message
+from models import db, ChatRoom, Message, UserProfile
 from matching_queue import MatchingQueue
 from config import Config
+from keyword_matcher import KeywordMatcher
+from room_key_generator import RoomKeyGenerator
 import uuid
 import os
+import json
 
 # 初始化Flask应用
 app = Flask(__name__)
@@ -115,6 +118,254 @@ def handle_join_queue():
         matching_queue.add(user_id)
         emit('waiting', {'message': '等待匹配中...', 'waiting_count': matching_queue.get_waiting_count()})
         print(f"用户 {user_id} 加入等待队列")
+
+
+@socketio.on('join_queue_with_profile')
+def handle_join_queue_with_profile(data):
+    """带简介加入匹配队列（支持关键词匹配）"""
+    user_id = session.get('user_id')
+    if not user_id:
+        emit('error', {'message': '无效的用户ID'})
+        return
+
+    # 检查用户是否已在房间中
+    if user_id in online_users and online_users[user_id].get('room_id'):
+        emit('error', {'message': '您已在聊天中'})
+        return
+
+    # 获取用户资料
+    bio = data.get('bio', '').strip()
+    purpose = data.get('purpose', '').strip()
+    keywords_text = data.get('keywords', '').strip()
+
+    # 提取关键词
+    keywords = KeywordMatcher.extract_keywords(purpose + ' ' + keywords_text)
+
+    # 构建资料
+    profile = {
+        'bio': bio,
+        'purpose': purpose,
+        'keywords': keywords
+    }
+
+    # 记录 SocketIO session ID
+    online_users[user_id] = {'sid': request.sid, 'room_id': None}
+
+    # 如果有关键词，尝试关键词匹配
+    if keywords:
+        match_result = matching_queue.try_keyword_match(user_id, profile)
+
+        if match_result:
+            matched_user, score = match_result
+
+            # 保存用户简介
+            user_profile = UserProfile(
+                user_id=user_id,
+                bio=bio,
+                purpose=purpose,
+                keywords=json.dumps(keywords, ensure_ascii=False)
+            )
+            db.session.add(user_profile)
+
+            # 保存匹配用户的简介
+            matched_profile = matching_queue.user_profiles.get(matched_user, {})
+            matched_user_profile = UserProfile(
+                user_id=matched_user,
+                bio=matched_profile.get('bio', ''),
+                purpose=matched_profile.get('purpose', ''),
+                keywords=json.dumps(matched_profile.get('keywords', []), ensure_ascii=False)
+            )
+            db.session.add(matched_user_profile)
+
+            # 创建房间
+            room = ChatRoom(
+                user1_id=user_id,
+                user2_id=matched_user,
+                match_type='keyword'
+            )
+            db.session.add(room)
+            db.session.commit()
+
+            # 双方加入 SocketIO room
+            room_id = str(room.id)
+            join_room(room_id)
+
+            # 获取对方的 session ID
+            matched_sid = online_users[matched_user]['sid']
+            join_room(room_id, sid=matched_sid)
+
+            # 更新在线用户信息
+            online_users[user_id]['room_id'] = room_id
+            online_users[matched_user]['room_id'] = room_id
+
+            # 通知双方匹配成功
+            socketio.emit('matched_with_score', {
+                'room_id': room_id,
+                'match_score': score,
+                'keywords_matched': list(set(keywords) & set(matched_profile.get('keywords', [])))
+            }, room=room_id)
+
+            print(f"关键词匹配成功: {user_id} <-> {matched_user}, 分数: {score:.2f}")
+            return
+
+    # 如果没有关键词或无匹配，加入随机队列
+    matching_queue.add(user_id)
+    emit('waiting', {'message': '等待匹配中...', 'waiting_count': matching_queue.get_waiting_count()})
+    print(f"用户 {user_id} 加入等待队列")
+
+
+@socketio.on('create_private_room')
+def handle_create_private_room(data):
+    """创建私密房间"""
+    user_id = session.get('user_id')
+    if not user_id:
+        emit('error', {'message': '无效的用户ID'})
+        return
+
+    # 检查用户是否已在房间中
+    if user_id in online_users and online_users[user_id].get('room_id'):
+        emit('error', {'message': '您已在聊天中'})
+        return
+
+    # 生成唯一秘钥
+    existing_keys = set(r.room_key for r in ChatRoom.query.filter(ChatRoom.room_key.isnot(None)).all())
+    room_key = RoomKeyGenerator.generate_unique_key(existing_keys)
+
+    # 获取用户资料
+    bio = data.get('bio', '').strip()
+    purpose = data.get('purpose', '').strip()
+    keywords_text = data.get('keywords', '').strip()
+    keywords = KeywordMatcher.extract_keywords(purpose + ' ' + keywords_text)
+
+    # 创建房间
+    room = ChatRoom(
+        user1_id=user_id,
+        user2_id=None,  # 私密房间初始为空
+        room_key=room_key,
+        match_type='private',
+        is_private=True
+    )
+    db.session.add(room)
+
+    # 保存用户简介
+    user_profile = UserProfile(
+        user_id=user_id,
+        bio=bio,
+        purpose=purpose,
+        keywords=json.dumps(keywords, ensure_ascii=False)
+    )
+    db.session.add(user_profile)
+    db.session.commit()
+
+    # 加入 SocketIO room
+    room_id = str(room.id)
+    join_room(room_id)
+
+    online_users[user_id] = {'sid': request.sid, 'room_id': room_id}
+
+    emit('private_room_created', {
+        'room_key': room_key,
+        'room_id': room_id,
+        'message': f'私密房间已创建！\n\n🔑 秘钥：{room_key}\n\n分享给朋友，让他们输入此秘钥加入房间。'
+    })
+
+    print(f"用户 {user_id} 创建私密房间，秘钥：{room_key}")
+
+
+@socketio.on('join_private_room')
+def handle_join_private_room(data):
+    """通过秘钥加入私密房间"""
+    user_id = session.get('user_id')
+    if not user_id:
+        emit('error', {'message': '无效的用户ID'})
+        return
+
+    room_key = data.get('room_key', '').strip().upper()
+
+    # 验证秘钥格式
+    if not RoomKeyGenerator.validate_key(room_key):
+        emit('error', {'message': '无效的秘钥格式'})
+        return
+
+    # 查找房间
+    room = ChatRoom.query.filter_by(room_key=room_key, is_private=True).first()
+    if not room:
+        emit('error', {'message': '秘钥不存在'})
+        return
+
+    # 检查房间是否已满
+    if room.user2_id and room.user2_id != user_id:
+        emit('error', {'message': '房间已满'})
+        return
+
+    # 获取用户资料
+    bio = data.get('bio', '').strip()
+    purpose = data.get('purpose', '').strip()
+    keywords_text = data.get('keywords', '').strip()
+    keywords = KeywordMatcher.extract_keywords(purpose + ' ' + keywords_text)
+
+    # 记录 SocketIO session ID
+    online_users[user_id] = {'sid': request.sid, 'room_id': str(room.id)}
+
+    # 加入房间
+    room_id = str(room.id)
+    join_room(room_id)
+
+    # 更新房间信息
+    if not room.user2_id:
+        room.user2_id = user_id
+        room.is_active = True
+
+    # 保存用户简介
+    user_profile = UserProfile(
+        user_id=user_id,
+        bio=bio,
+        purpose=purpose,
+        keywords=json.dumps(keywords, ensure_ascii=False)
+    )
+    db.session.add(user_profile)
+    db.session.commit()
+
+    # 加载历史消息
+    messages = Message.query.filter_by(room_id=room.id).order_by(Message.timestamp.asc()).all()
+    history = [msg.to_dict() for msg in messages]
+
+    # 通知双方
+    socketio.emit('joined_private_room', {
+        'room_id': room_id,
+        'room_key': room_key,
+        'has_history': len(history) > 0,
+        'message': '已加入私密房间'
+    }, room=room_id)
+
+    # 如果有历史记录，发送给新加入的用户
+    if history:
+        emit('room_history', {'messages': history})
+
+    print(f"用户 {user_id} 通过秘钥加入房间 {room_key}")
+
+
+@socketio.on('get_room_history')
+def handle_get_room_history(data):
+    """获取房间历史记录（通过秘钥查看）"""
+    room_key = data.get('room_key', '').strip().upper()
+
+    # 验证秘钥
+    room = ChatRoom.query.filter_by(room_key=room_key).first()
+    if not room:
+        emit('error', {'message': '秘钥不存在'})
+        return
+
+    # 获取历史消息
+    messages = Message.query.filter_by(room_id=room.id).order_by(Message.timestamp.asc()).all()
+    history = [msg.to_dict() for msg in messages]
+
+    emit('room_history', {
+        'room_id': room.id,
+        'room_key': room_key,
+        'messages': history,
+        'message_count': len(history)
+    })
 
 
 @socketio.on('send_message')
