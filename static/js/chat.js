@@ -186,7 +186,7 @@ document.getElementById('submit-profile-btn').addEventListener('click', () => {
         socket.emit('join_queue_with_profile', profileData);
     }
 
-    profileForm.classList.add('active');
+    profileForm.classList.remove('active');
     switchScreen(AppState.WAITING);
 });
 
@@ -201,7 +201,7 @@ document.getElementById('skip-profile-btn').addEventListener('click', () => {
     } else {
         socket.emit('join_queue');
     }
-    profileForm.classList.add('active');
+    profileForm.classList.remove('active');
     switchScreen(AppState.WAITING);
 });
 
@@ -227,7 +227,7 @@ document.getElementById('join-by-key-btn').addEventListener('click', () => {
     };
 
     socket.emit('join_private_room', profileData);
-    joinRoomForm.classList.add('active');
+    joinRoomForm.classList.remove('active');
     switchScreen(AppState.WAITING);
 });
 
