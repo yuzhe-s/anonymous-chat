@@ -1,10 +1,11 @@
-from flask import Flask, render_template, session, request
+from flask import Flask, render_template, session, request, jsonify
 from flask_socketio import SocketIO, emit, join_room, leave_room
 from flask_session import Session
 from models import db, ChatRoom, Message
 from matching_queue import MatchingQueue
 from config import Config
 import uuid
+import os
 
 # 初始化Flask应用
 app = Flask(__name__)
@@ -20,6 +21,36 @@ matching_queue = MatchingQueue()
 
 # 在线用户追踪 {user_id: {'sid': session_id, 'room_id': room_id}}
 online_users = {}
+
+
+@app.route('/admin')
+def admin():
+    """管理后台页面 - 简单密码保护"""
+    # 简单的密码验证（生产环境应该用更安全的方式）
+    password = request.args.get('password')
+    if password != os.environ.get('ADMIN_PASSWORD', 'admin123'):
+        return "未授权访问", 401
+
+    # 获取统计数据
+    total_rooms = ChatRoom.query.count()
+    total_messages = Message.query.count()
+    active_rooms = ChatRoom.query.filter_by(is_active=True).count()
+
+    stats = {
+        'total_rooms': total_rooms,
+        'total_messages': total_messages,
+        'active_rooms': active_rooms
+    }
+
+    # 获取所有聊天室（按创建时间倒序）
+    rooms = ChatRoom.query.order_by(ChatRoom.created_at.desc()).all()
+
+    # 准备 JSON 数据用于导出
+    data_json = [room.to_dict() for room in rooms]
+    for room_data, room in zip(data_json, rooms):
+        room_data['messages'] = [msg.to_dict() for msg in room.messages]
+
+    return render_template('admin.html', stats=stats, rooms=rooms, data_json=data_json)
 
 
 @app.route('/')
