@@ -169,7 +169,10 @@
         </div>
 
         {% if rooms %}
-            <button class="export-btn" onclick="exportData()">📥 导出 JSON 数据</button>
+            <div style="margin-bottom: 20px;">
+                <button class="export-btn" onclick="exportCSV()">📥 导出 CSV（Excel）</button>
+                <button class="export-btn" onclick="exportJSON()" style="background: #6c757d;">📦 导出 JSON</button>
+            </div>
 
             {% for room in rooms %}
             <div class="room-card">
@@ -212,7 +215,40 @@
     <script>
         const allData = {{ data_json }};
 
-        function exportData() {
+        // 导出为 CSV（可用 Excel 打开）
+        function exportCSV() {
+            // CSV 表头
+            let csv = '\uFEFF'; // UTF-8 BOM，让 Excel 正确识别中文
+            csv += '房间ID,用户1,用户2,发送者ID,消息内容,发送时间,房间状态\n';
+
+            // 遍历所有聊天室和消息
+            allData.forEach(room => {
+                if (room.messages.length === 0) {
+                    // 没有消息的房间也要记录
+                    csv += `${room.id},${room.user1_id},${room.user2_id},,(无消息),,${room.is_active ? '活跃' : '已关闭'}\n`;
+                } else {
+                    room.messages.forEach(msg => {
+                        const content = msg.content.replace(/"/g, '""'); // 转义双引号
+                        const timestamp = msg.timestamp.replace('T', ' ').slice(0, 19);
+                        csv += `${room.id},${room.user1_id},${room.user2_id},${msg.sender_id},"${content}",${timestamp},${room.is_active ? '活跃' : '已关闭'}\n`;
+                    });
+                }
+            });
+
+            // 下载文件
+            const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement('a');
+            const url = URL.createObjectURL(blob);
+            link.setAttribute('href', url);
+            link.setAttribute('download', '聊天记录_' + new Date().toISOString().slice(0,10) + '.csv');
+            link.style.visibility = 'hidden';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+
+        // 导出为 JSON
+        function exportJSON() {
             const dataStr = JSON.stringify(allData, null, 2);
             const dataBlob = new Blob([dataStr], {type: 'application/json'});
             const url = URL.createObjectURL(dataBlob);
