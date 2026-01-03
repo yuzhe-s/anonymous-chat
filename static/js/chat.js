@@ -10,12 +10,18 @@ const AppState = {
 
 let currentState = AppState.INIT;
 let currentRoomId = null;
+let currentRoomKey = null;
+let currentMatchType = 'random';  // 'random', 'keyword', 'private'
 
 // 获取DOM元素
 const startScreen = document.getElementById('start-screen');
 const waitingScreen = document.getElementById('waiting-screen');
 const chatScreen = document.getElementById('chat-screen');
+const profileForm = document.getElementById('profile-form');
+const joinRoomForm = document.getElementById('join-room-form');
 const startMatchBtn = document.getElementById('start-match-btn');
+const createRoomBtn = document.getElementById('create-room-btn');
+const joinRoomBtn = document.getElementById('join-room-btn');
 const cancelMatchBtn = document.getElementById('cancel-match-btn');
 const leaveBtn = document.getElementById('leave-btn');
 const sendBtn = document.getElementById('send-btn');
@@ -28,6 +34,8 @@ function switchScreen(state) {
     startScreen.classList.remove('active');
     waitingScreen.classList.remove('active');
     chatScreen.classList.remove('active');
+    profileForm.classList.remove('active');
+    joinRoomForm.classList.remove('active');
 
     switch(state) {
         case AppState.INIT:
@@ -41,6 +49,38 @@ function switchScreen(state) {
             break;
     }
     currentState = state;
+}
+
+// 显示简介表单
+function showProfileForm(matchType) {
+    startScreen.classList.remove('active');
+    profileForm.classList.remove('active');
+    joinRoomForm.classList.remove('active');
+    profileForm.classList.add('active');
+    currentMatchType = matchType;
+}
+
+// 显示秘钥输入表单
+function showJoinRoomForm() {
+    startScreen.classList.remove('active');
+    profileForm.classList.remove('active');
+    joinRoomForm.classList.remove('active');
+    joinRoomForm.classList.add('active');
+}
+
+// 隐藏所有表单，返回主界面
+function hideAllForms() {
+    profileForm.classList.remove('active');
+    joinRoomForm.classList.remove('active');
+    startScreen.classList.add('active');
+}
+
+// 提取关键词
+function extractKeywords(text) {
+    if (!text) return [];
+    return text.split(/\s+/)
+        .map(k => k.trim())
+        .filter(k => k.length >= 2);
 }
 
 // HTML转义，防止XSS攻击
@@ -110,10 +150,90 @@ function sendMessage() {
 
 // ========== 事件监听器 ==========
 
-// 开始匹配
+// 开始匹配按钮
 startMatchBtn.addEventListener('click', () => {
-    socket.emit('join_queue');
+    showProfileForm('keyword');
+});
+
+// 创建私密房间按钮
+createRoomBtn.addEventListener('click', () => {
+    showProfileForm('private');
+});
+
+// 通过秘钥加入按钮
+joinRoomBtn.addEventListener('click', () => {
+    showJoinRoomForm();
+});
+
+// 提交简介并开始匹配
+document.getElementById('submit-profile-btn').addEventListener('click', () => {
+    const bio = document.getElementById('user-bio').value.trim();
+    const purpose = document.getElementById('user-purpose').value.trim();
+    const keywordsText = document.getElementById('user-keywords').value.trim();
+    const keywords = extractKeywords(keywordsText);
+
+    const profileData = {
+        bio: bio,
+        purpose: purpose,
+        keywords: keywords
+    };
+
+    if (currentMatchType === 'private') {
+        // 创建私密房间
+        socket.emit('create_private_room', profileData);
+    } else {
+        // 关键词匹配
+        socket.emit('join_queue_with_profile', profileData);
+    }
+
+    profileForm.classList.add('active');
     switchScreen(AppState.WAITING);
+});
+
+// 跳过简介
+document.getElementById('skip-profile-btn').addEventListener('click', () => {
+    if (currentMatchType === 'private') {
+        socket.emit('create_private_room', {
+            bio: '',
+            purpose: '',
+            keywords: []
+        });
+    } else {
+        socket.emit('join_queue');
+    }
+    profileForm.classList.add('active');
+    switchScreen(AppState.WAITING);
+});
+
+// 通过秘钥加入房间
+document.getElementById('join-by-key-btn').addEventListener('click', () => {
+    const roomKey = document.getElementById('room-key-input').value.trim().toUpperCase();
+
+    if (roomKey.length !== 8) {
+        alert('秘钥必须是8位');
+        return;
+    }
+
+    const bio = document.getElementById('join-bio').value.trim();
+    const purpose = document.getElementById('join-purpose').value.trim();
+    const keywordsText = document.getElementById('join-purpose').value.trim();
+    const keywords = extractKeywords(keywordsText);
+
+    const profileData = {
+        room_key: roomKey,
+        bio: bio,
+        purpose: purpose,
+        keywords: keywords
+    };
+
+    socket.emit('join_private_room', profileData);
+    joinRoomForm.classList.add('active');
+    switchScreen(AppState.WAITING);
+});
+
+// 取消加入
+document.getElementById('cancel-join-btn').addEventListener('click', () => {
+    hideAllForms();
 });
 
 // 取消匹配
@@ -165,10 +285,92 @@ socket.on('waiting', (data) => {
 socket.on('matched', (data) => {
     console.log('匹配成功!', data);
     currentRoomId = data.room_id;
+    currentMatchType = 'random';
+    currentRoomKey = null;
     switchScreen(AppState.CHATTING);
     clearMessages();
     addSystemMessage('✅ 已匹配到聊天对象，开始聊天吧！');
     enableChatInput();
+});
+
+// 关键词匹配成功
+socket.on('matched_with_score', (data) => {
+    console.log('关键词匹配成功!', data);
+    currentRoomId = data.room_id;
+    currentMatchType = 'keyword';
+    currentRoomKey = null;
+    switchScreen(AppState.CHATTING);
+    clearMessages();
+
+    const matchScore = (data.match_score * 100).toFixed(0);
+    addSystemMessage(`✅ 匹配成功！\n\n相似度：${matchScore}%\n匹配关键词：${data.keywords_matched.join('、')}\n\n开始聊天吧！`);
+    enableChatInput();
+});
+
+// 私密房间创建成功
+socket.on('private_room_created', (data) => {
+    console.log('私密房间已创建:', data);
+    currentRoomId = data.room_id;
+    currentRoomKey = data.room_key;
+    currentMatchType = 'private';
+
+    switchScreen(AppState.CHATTING);
+    clearMessages();
+    addSystemMessage(data.message);
+
+    // 显示秘钥
+    document.getElementById('room-key-display').style.display = 'inline';
+    document.getElementById('current-room-key').textContent = data.room_key;
+    enableChatInput();
+});
+
+// 加入私密房间成功
+socket.on('joined_private_room', (data) => {
+    console.log('已加入私密房间:', data);
+    currentRoomId = data.room_id;
+    currentRoomKey = data.room_key;
+    currentMatchType = 'private';
+
+    switchScreen(AppState.CHATTING);
+    clearMessages();
+
+    if (data.has_history) {
+        addSystemMessage('📜 正在加载历史消息...');
+    } else {
+        addSystemMessage('✅ 已加入私密房间，开始聊天吧！');
+    }
+
+    // 显示秘钥
+    document.getElementById('room-key-display').style.display = 'inline';
+    document.getElementById('current-room-key').textContent = data.room_key;
+    enableChatInput();
+});
+
+// 接收历史消息
+socket.on('room_history', (data) => {
+    console.log('收到历史消息:', data.message_count);
+
+    if (data.messages && data.messages.length > 0) {
+        addSystemMessage(`📜 已加载 ${data.messages.length} 条历史消息\n---`);
+
+        data.messages.forEach(msg => {
+            const isOwn = msg.sender_id === window.currentUserId;
+            addMessage(msg.content, msg.timestamp, isOwn);
+        });
+
+        addSystemMessage('--- 历史消息加载完毕');
+    }
+});
+
+// 复制秘钥
+document.getElementById('copy-key-btn').addEventListener('click', () => {
+    if (currentRoomKey) {
+        navigator.clipboard.writeText(currentRoomKey).then(() => {
+            alert('秘钥已复制到剪贴板！\n\n' + currentRoomKey);
+        }).catch(() => {
+            alert('复制失败，请手动复制：' + currentRoomKey);
+        });
+    }
 });
 
 // 接收新消息

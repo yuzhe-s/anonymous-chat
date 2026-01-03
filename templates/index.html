@@ -14,8 +14,72 @@
             <div class="container">
                 <h1>🎭 匿名聊天室</h1>
                 <p class="subtitle">随机匹配陌生人，开始一段匿名对话</p>
-                <button id="start-match-btn" class="btn btn-primary">开始匹配</button>
+
+                <!-- 匹配选项 -->
+                <div id="match-options" class="match-options">
+                    <button id="start-match-btn" class="btn btn-primary">🎲 开始匹配</button>
+                    <button id="create-room-btn" class="btn btn-secondary">🔑 创建私密房间</button>
+                    <button id="join-room-btn" class="btn btn-secondary">🔓 通过秘钥加入</button>
+                </div>
+
                 <p class="user-id">你的ID: <span id="current-user-id">{{ user_id }}</span></p>
+            </div>
+        </div>
+
+        <!-- 简介表单 -->
+        <div id="profile-form" class="screen hidden">
+            <div class="container form-container">
+                <h2>填写简介（可选）</h2>
+                <p class="form-hint">填写简介和目的，帮你匹配到更合适的人</p>
+
+                <div class="form-group">
+                    <label for="user-bio">自我介绍</label>
+                    <textarea id="user-bio" placeholder="简单介绍一下自己..." rows="2"></textarea>
+                </div>
+
+                <div class="form-group">
+                    <label for="user-purpose">聊天目的</label>
+                    <textarea id="user-purpose" placeholder="你想聊什么话题？例如：交朋友、学习、游戏、倾诉..." rows="2"></textarea>
+                </div>
+
+                <div class="form-group">
+                    <label for="user-keywords">关键词（选填）</label>
+                    <input type="text" id="user-keywords" placeholder="用空格分隔，如：音乐 电影 旅行" maxlength="50">
+                    <small class="form-hint">关键词会帮助你匹配到有相同兴趣的人</small>
+                </div>
+
+                <div class="form-actions">
+                    <button id="submit-profile-btn" class="btn btn-primary">开始匹配</button>
+                    <button id="skip-profile-btn" class="btn btn-secondary">跳过</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- 秘钥输入表单 -->
+        <div id="join-room-form" class="screen hidden">
+            <div class="container form-container">
+                <h2>输入秘钥加入房间</h2>
+                <p class="form-hint">输入8位秘钥，加入朋友的私密房间</p>
+
+                <div class="form-group">
+                    <label for="room-key-input">房间秘钥</label>
+                    <input type="text" id="room-key-input" placeholder="输入8位秘钥（例如：ABC12345）" maxlength="8" style="text-transform: uppercase; font-size: 1.5rem; letter-spacing: 2px; text-align: center;">
+                </div>
+
+                <div class="form-group">
+                    <label for="join-bio">自我介绍（可选）</label>
+                    <textarea id="join-bio" placeholder="简单介绍一下自己..." rows="2"></textarea>
+                </div>
+
+                <div class="form-group">
+                    <label for="join-purpose">聊天目的（可选）</label>
+                    <textarea id="join-purpose" placeholder="你想聊什么话题？" rows="2"></textarea>
+                </div>
+
+                <div class="form-actions">
+                    <button id="join-by-key-btn" class="btn btn-primary">加入房间</button>
+                    <button id="cancel-join-btn" class="btn btn-secondary">返回</button>
+                </div>
             </div>
         </div>
 
@@ -33,7 +97,13 @@
         <div id="chat-screen" class="screen">
             <div class="chat-container">
                 <div class="chat-header">
-                    <span class="partner-info">💬 与陌生人聊天中</span>
+                    <div class="header-info">
+                        <span class="partner-info" id="room-type">💬 与陌生人聊天中</span>
+                        <span class="room-key-display" id="room-key-display" style="display: none;">
+                            🔑 秘钥：<strong id="current-room-key"></strong>
+                            <button id="copy-key-btn" class="btn-small">复制</button>
+                        </span>
+                    </div>
                     <button id="leave-btn" class="btn btn-danger">离开聊天</button>
                 </div>
 
