@@ -151,8 +151,12 @@ def handle_join_queue_with_profile(data):
     # 记录 SocketIO session ID
     online_users[user_id] = {'sid': request.sid, 'room_id': None}
 
-    # 如果有关键词，尝试关键词匹配
+    # 如果有关键词，先添加到关键词队列，然后尝试匹配
     if keywords:
+        # 先将自己加入队列
+        matching_queue.add_with_profile(user_id, profile)
+
+        # 尝试匹配
         match_result = matching_queue.try_keyword_match(user_id, profile)
 
         if match_result:
@@ -208,10 +212,15 @@ def handle_join_queue_with_profile(data):
             print(f"关键词匹配成功: {user_id} <-> {matched_user}, 分数: {score:.2f}")
             return
 
-    # 如果没有关键词或无匹配，加入随机队列
-    matching_queue.add(user_id)
-    emit('waiting', {'message': '等待匹配中...', 'waiting_count': matching_queue.get_waiting_count()})
-    print(f"用户 {user_id} 加入等待队列")
+        # 已添加到关键词队列但暂时没有匹配，发送等待状态
+        emit('waiting', {'message': '正在寻找相似话题的聊天对象...', 'waiting_count': matching_queue.get_waiting_count()})
+        print(f"用户 {user_id} 加入关键词匹配队列")
+
+    # 如果没有关键词，加入随机队列
+    else:
+        matching_queue.add(user_id)
+        emit('waiting', {'message': '等待匹配中...', 'waiting_count': matching_queue.get_waiting_count()})
+        print(f"用户 {user_id} 加入随机等待队列")
 
 
 @socketio.on('create_private_room')
