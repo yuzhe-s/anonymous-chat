@@ -15,6 +15,12 @@ class Config:
     SQLALCHEMY_DATABASE_URI = database_url
     SQLALCHEMY_TRACK_MODIFICATIONS = False
 
+    # 禁用连接池，兼容 eventlet
+    SQLALCHEMY_ENGINE_OPTIONS = {
+        'poolclass': None,
+        'pool_pre_ping': True
+    }
+
     # Session配置
     SESSION_TYPE = 'filesystem'
     PERMANENT_SESSION_LIFETIME = 86400  # 24小时
